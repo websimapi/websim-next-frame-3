@@ -334,7 +334,8 @@ async function extractGifFrames(file){
     frames = []; let prevSnap = null;
     for (const f of raw){
       if (f.disposalType === 3) prevSnap = cctx.getImageData(0,0,w,h);
-      cctx.putImageData(f.patch, f.dims.left, f.dims.top);
+      const imgData = new ImageData(f.patch, f.dims.width, f.dims.height);
+      cctx.putImageData(imgData, f.dims.left, f.dims.top);
       const out = makeBlankCanvas(w,h); out.getContext('2d').drawImage(comp,0,0);
       frames.push(out);
       if (f.disposalType === 2) cctx.clearRect(f.dims.left, f.dims.top, f.dims.width, f.dims.height);
