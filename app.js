@@ -325,23 +325,16 @@ window.addEventListener('load', () => {
 
 async function extractGifFrames(file){
   try {
-    const ab = await file.arrayBuffer();
-    const parsed = gifuct.parseGIF(ab);
-    const raw = gifuct.decompressFrames(parsed, true);
-    const w = parsed.lsd.width, h = parsed.lsd.height;
-    el('gifWidth').value = w; el('gifHeight').value = h; syncCanvasSize(w,h);
-    const comp = makeBlankCanvas(w,h); const cctx = comp.getContext('2d');
+    const ab = await file.arrayBuffer(); const parsed = gifuct.parseGIF(ab); const raw = gifuct.decompressFrames(parsed, true);
+    const w = parsed.lsd.width, h = parsed.lsd.height; el('gifWidth').value = w; el('gifHeight').value = h; syncCanvasSize(w,h);
+    const bgIdx = parsed.bgColorIndex, gct = parsed.gct, bg = (gct && Number.isInteger(bgIdx) && gct[bgIdx]) ? `rgba(${gct[bgIdx][0]},${gct[bgIdx][1]},${gct[bgIdx][2]},1)` : 'rgba(0,0,0,0)';
+    const comp = makeBlankCanvas(w,h), cctx = comp.getContext('2d'); cctx.save(); cctx.globalCompositeOperation = 'source-over'; cctx.fillStyle = bg; cctx.fillRect(0,0,w,h); cctx.restore();
     frames = []; let prevSnap = null;
-    for (const f of raw){
-      if (f.disposalType === 3) prevSnap = cctx.getImageData(0,0,w,h);
-      const imgData = new ImageData(f.patch, f.dims.width, f.dims.height);
-      cctx.putImageData(imgData, f.dims.left, f.dims.top);
-      const out = makeBlankCanvas(w,h); out.getContext('2d').drawImage(comp,0,0);
-      frames.push(out);
-      if (f.disposalType === 2) cctx.clearRect(f.dims.left, f.dims.top, f.dims.width, f.dims.height);
+    for (const f of raw){ if (f.disposalType === 3) prevSnap = cctx.getImageData(0,0,w,h); const imgData = new ImageData(f.patch, f.dims.width, f.dims.height); cctx.putImageData(imgData, f.dims.left, f.dims.top);
+      const out = makeBlankCanvas(w,h); out.getContext('2d').drawImage(comp,0,0); frames.push(out);
+      if (f.disposalType === 2) { cctx.save(); cctx.fillStyle = bg; cctx.fillRect(f.dims.left, f.dims.top, f.dims.width, f.dims.height); cctx.restore(); }
       else if (f.disposalType === 3 && prevSnap) { cctx.putImageData(prevSnap,0,0); prevSnap = null; }
     }
-    currentFrame = 0; renderCurrentFrame(); updateFrameInfo();
-    statusEl.textContent = `Loaded ${frames.length} frame(s) from GIF.`;
+    currentFrame = 0; renderCurrentFrame(); updateFrameInfo(); statusEl.textContent = `Loaded ${frames.length} frame(s) from GIF.`;
   } catch(e){ console.error(e); statusEl.textContent = 'Failed to parse GIF.'; }
 }
