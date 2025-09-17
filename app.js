@@ -1,4 +1,5 @@
 // Minimal in-browser GIF builder using gif.js and its worker
+import { parseGIF, decompressFrames } from 'gifuct-js';
 
 let gifWorkerBlob = null;
 
@@ -323,18 +324,61 @@ window.addEventListener('load', () => {
              parseInt(document.getElementById('gifHeight').value,10));
 });
 
-async function extractGifFrames(file){
+async function extractGifFrames(file) {
   try {
-    const ab = await file.arrayBuffer(); const parsed = gifuct.parseGIF(ab); const raw = gifuct.decompressFrames(parsed, true);
-    const w = parsed.lsd.width, h = parsed.lsd.height; el('gifWidth').value = w; el('gifHeight').value = h; syncCanvasSize(w,h);
-    const bgIdx = parsed.bgColorIndex, gct = parsed.gct, bg = (gct && Number.isInteger(bgIdx) && gct[bgIdx]) ? `rgba(${gct[bgIdx][0]},${gct[bgIdx][1]},${gct[bgIdx][2]},1)` : 'rgba(0,0,0,0)';
-    const comp = makeBlankCanvas(w,h), cctx = comp.getContext('2d'); cctx.save(); cctx.globalCompositeOperation = 'source-over'; cctx.fillStyle = bg; cctx.fillRect(0,0,w,h); cctx.restore();
-    frames = []; let prevSnap = null;
-    for (const f of raw){ if (f.disposalType === 3) prevSnap = cctx.getImageData(0,0,w,h); const imgData = new ImageData(f.patch, f.dims.width, f.dims.height); cctx.putImageData(imgData, f.dims.left, f.dims.top);
-      const out = makeBlankCanvas(w,h); out.getContext('2d').drawImage(comp,0,0); frames.push(out);
-      if (f.disposalType === 2) { cctx.save(); cctx.fillStyle = bg; cctx.fillRect(f.dims.left, f.dims.top, f.dims.width, f.dims.height); cctx.restore(); }
-      else if (f.disposalType === 3 && prevSnap) { cctx.putImageData(prevSnap,0,0); prevSnap = null; }
+    const buffer = await file.arrayBuffer();
+    const gif = parseGIF(buffer);
+    const gifFrames = decompressFrames(gif, true);
+
+    const { width, height } = gif.lsd;
+    el('gifWidth').value = width;
+    el('gifHeight').value = height;
+    syncCanvasSize(width, height);
+
+    const newFrames = [];
+    const tempCanvas = makeBlankCanvas(width, height);
+    const tempCtx = tempCanvas.getContext('2d');
+    let prevFrameData = null;
+
+    for (let i = 0; i < gifFrames.length; i++) {
+        const frame = gifFrames[i];
+        const { dims, patch, disposalType } = frame;
+
+        if (!patch.length) continue; // Skip empty patches
+
+        // Save canvas state before drawing if next disposal is 3
+        if (disposalType === 3 && !prevFrameData) {
+            prevFrameData = tempCtx.getImageData(0, 0, width, height);
+        }
+
+        const patchData = new ImageData(patch, dims.width, dims.height);
+        tempCtx.putImageData(patchData, dims.left, dims.top);
+        
+        const frameCanvas = makeBlankCanvas(width, height);
+        frameCanvas.getContext('2d').drawImage(tempCanvas, 0, 0);
+        newFrames.push(frameCanvas);
+
+        // Handle disposal
+        if (disposalType === 2) { // Restore to background
+            tempCtx.clearRect(dims.left, dims.top, dims.width, dims.height);
+        } else if (disposalType === 3 && prevFrameData) { // Restore to previous
+            tempCtx.putImageData(prevFrameData, 0, 0);
+            prevFrameData = null;
+        }
     }
-    currentFrame = 0; renderCurrentFrame(); updateFrameInfo(); statusEl.textContent = `Loaded ${frames.length} frame(s) from GIF.`;
-  } catch(e){ console.error(e); statusEl.textContent = 'Failed to parse GIF.'; }
+
+    if (newFrames.length > 0) {
+        frames = newFrames;
+        currentFrame = 0;
+        renderCurrentFrame();
+        updateFrameInfo();
+        statusEl.textContent = `Loaded ${frames.length} frame(s) from GIF.`;
+    } else {
+        statusEl.textContent = 'Could not extract frames from GIF.';
+    }
+
+  } catch(e) {
+      console.error(e);
+      statusEl.textContent = `Failed to parse GIF: ${e.message || 'Unknown error'}`;
+  }
 }
